@@ -164,6 +164,22 @@
 <div id="app"></div>
 
 <script>
+/* ============================================================================
+   Client ID: wklej tu swój, żeby appka ZAWSZE pomijała ekran startowy i od
+   razu pokazywała "Zaloguj się przez Google". Client ID nie jest tajny (jest
+   z natury publiczny w aplikacjach webowych) — bezpiecznie możesz go wpisać
+   na stałe. Zostaw puste ("") żeby appka poprosiła o niego przy pierwszym
+   uruchomieniu (starszy sposób, wciąż działa jako zapasowy).
+
+   ID arkusza: to pole jest tylko DOMYŚLNE — nawet jeśli je tu wpiszesz, i tak
+   będziesz mogła je zmienić w każdej chwili z poziomu Ustawień w appce (po
+   zalogowaniu), bez edycji tego pliku. Zostaw puste, jeśli wolisz podać je
+   wyłącznie przez Ustawienia.
+   ============================================================================ */
+const HARDCODED_CLIENT_ID = "
+525970165988-vmr90nclqd7ltnmdnhc64frk953qoeln.apps.googleusercontent.com";
+const HARDCODED_SPREADSHEET_ID = "";
+
 /* ============================== CONTENT CONFIG ============================== */
 const CATEGORIES = [
   { id:"morning", name:"Poranna rutyna", items:[
@@ -241,11 +257,36 @@ function dateRangeList(startStr,endStr){ const arr=[]; let cur=startStr, guard=0
 function humanDate(dateStr){ return parseDateStr(dateStr).toLocaleDateString("pl-PL",{weekday:"long",day:"numeric",month:"long"}); }
 function humanDateShort(dateStr){ return parseDateStr(dateStr).toLocaleDateString("pl-PL",{day:"numeric",month:"short"}); }
 
-/* ============================== CONFIG (client id + spreadsheet id only) ============================== */
-function loadConfig(){
-  try{ const raw = localStorage.getItem("rd-config"); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
+/* ============================== CONFIG ============================== */
+// Spreadsheet ID: a user-settable override (changeable from Settings, after signing in)
+// always wins over the hardcoded fallback, so she can switch sheets without editing code.
+function getSpreadsheetId(){
+  try{
+    const override = localStorage.getItem("rd-sheet-override");
+    if(override) return override;
+  }catch(e){}
+  return HARDCODED_SPREADSHEET_ID || null;
 }
-function saveConfig(cfg){ try{ localStorage.setItem("rd-config", JSON.stringify(cfg)); }catch(e){} }
+function setSpreadsheetOverride(id){
+  try{ localStorage.setItem("rd-sheet-override", id); }catch(e){}
+}
+
+function loadConfig(){
+  if(HARDCODED_CLIENT_ID){
+    return { clientId: HARDCODED_CLIENT_ID, spreadsheetId: getSpreadsheetId() };
+  }
+  // Fallback for anyone who hasn't hardcoded a Client ID yet: old one-time config screen.
+  try{
+    const raw = localStorage.getItem("rd-config");
+    const saved = raw ? JSON.parse(raw) : null;
+    if(saved && saved.clientId) return { clientId: saved.clientId, spreadsheetId: getSpreadsheetId() || saved.spreadsheetId };
+  }catch(e){}
+  return null;
+}
+function saveConfig(cfg){
+  try{ localStorage.setItem("rd-config", JSON.stringify(cfg)); }catch(e){}
+  if(cfg.spreadsheetId) setSpreadsheetOverride(cfg.spreadsheetId);
+}
 
 /* ============================== GOOGLE AUTH ============================== */
 let tokenClient = null;
@@ -488,7 +529,7 @@ function checkSVG(){ return '<svg width="14" height="14" viewBox="0 0 24 24" fil
 
 /* ============================== STATE ============================== */
 const state = {
-  screen: "boot", // boot | config | signin | loading | error | app
+  screen: "boot", // boot | config | signin | need-sheet-id | loading | error | app
   errorMsg: "",
   activeTab: "today",
   viewDate: todayStr(),
@@ -507,6 +548,7 @@ function render(){
   const app = document.getElementById("app");
   if(state.screen==="config"){ app.innerHTML = renderConfig(); return; }
   if(state.screen==="signin"){ app.innerHTML = renderSignIn(); return; }
+  if(state.screen==="need-sheet-id"){ app.innerHTML = renderNeedSheetId(); return; }
   if(state.screen==="loading" || state.screen==="boot"){ app.innerHTML = '<div class="rd-loading" style="padding-top:80px;">Ładowanie…</div>'; return; }
   if(state.screen==="error"){ app.innerHTML = renderConnError(); return; }
 
@@ -541,7 +583,16 @@ function renderSignIn(){
   return '<div class="rd-setup"><h1>Rytuały dnia</h1>' +
     '<p>Zaloguj się swoim kontem Google, żeby połączyć się z Twoim arkuszem.</p>' +
     '<button class="rd-google-btn" data-action="do-signin">Zaloguj się przez Google</button>' +
-    '<button class="secondary" data-action="edit-config">Zmień Client ID / ID arkusza</button>' +
+    '<button class="secondary" data-action="change-sheet-id">Zmień ID arkusza</button>' +
+    (state.errorMsg ? '<div class="rd-error">'+escapeHTML(state.errorMsg)+'</div>' : '') +
+    '</div>';
+}
+function renderNeedSheetId(){
+  return '<div class="rd-setup"><h1>ID arkusza</h1>' +
+    '<p>Podaj ID arkusza Google Sheets, z którym appka ma się połączyć (fragment adresu między /d/ a /edit).</p>' +
+    '<label>ID arkusza</label>' +
+    '<input id="sheet-id-input" placeholder="1AbC…" value="'+escapeHTML(getSpreadsheetId()||"")+'">' +
+    '<button data-action="save-sheet-id">Zapisz i połącz</button>' +
     (state.errorMsg ? '<div class="rd-error">'+escapeHTML(state.errorMsg)+'</div>' : '') +
     '</div>';
 }
@@ -549,7 +600,7 @@ function renderConnError(){
   return '<div class="rd-setup"><h1>Coś poszło nie tak</h1>' +
     '<p>'+escapeHTML(state.errorMsg||"Sprawdź konfigurację i połączenie z internetem.")+'</p>' +
     '<button data-action="do-signin">Spróbuj ponownie</button>' +
-    '<button class="secondary" data-action="edit-config">Zmień Client ID / ID arkusza</button>' +
+    '<button class="secondary" data-action="change-sheet-id">Zmień ID arkusza</button>' +
     '</div>';
 }
 
@@ -836,7 +887,7 @@ function renderSettings(){
   html += '<h3 class="rd-h3">Konto i arkusz</h3><div class="rd-settingsbtns">' +
     '<button class="rd-settingsbtn" data-action="refresh-sheet">&#8635; Odśwież dane z arkusza</button>' +
     '<button class="rd-settingsbtn" data-action="sign-out">Wyloguj</button>' +
-    '<button class="rd-settingsbtn" data-action="edit-config">Zmień Client ID / ID arkusza</button></div>';
+    '<button class="rd-settingsbtn" data-action="change-sheet-id">Zmień ID arkusza</button></div>';
 
   html += '<h3 class="rd-h3">Kopia zapasowa (lokalny plik)</h3><div class="rd-settingsbtns">' +
     '<button class="rd-settingsbtn" data-action="export-json">&#8595; JSON</button>' +
@@ -863,7 +914,25 @@ function handleClick(e){
     bootFromConfig();
     return;
   }
-  if(action==="edit-config"){ state.settingsOpen=false; state.screen="config"; state.errorMsg=""; render(); return; }
+  if(action==="change-sheet-id"){
+    state.settingsOpen=false; state.screen="need-sheet-id"; state.errorMsg=""; render(); return;
+  }
+  if(action==="save-sheet-id"){
+    const id = document.getElementById("sheet-id-input").value.trim();
+    if(!id){ state.errorMsg = "Podaj ID arkusza."; render(); return; }
+    setSpreadsheetOverride(id);
+    state.errorMsg = "";
+    if(accessToken && Date.now() < tokenExpiry){
+      state.screen = "loading";
+      render();
+      loadSheetData().then(function(){ state.screen="app"; render(); })
+        .catch(function(e){ state.screen="error"; state.errorMsg=(e&&e.message)||"Nie udało się wczytać arkusza."; render(); });
+    } else {
+      state.screen = "signin";
+      render();
+    }
+    return;
+  }
   if(action==="do-signin"){ doSignIn(); return; }
   if(action==="reauth-click"){ doSignIn(); return; }
   if(action==="sign-out"){ accessToken=null; tokenExpiry=0; state.settingsOpen=false; state.screen="signin"; render(); return; }
@@ -1020,6 +1089,11 @@ async function doSignIn(){
   render();
   try{
     await requestToken("consent");
+    if(!getSpreadsheetId()){
+      state.screen = "need-sheet-id";
+      render();
+      return;
+    }
     await loadSheetData();
     state.screen = "app";
     render();
@@ -1048,7 +1122,7 @@ try{
 }catch(e){}
 
 const initialCfg = loadConfig();
-if(initialCfg && initialCfg.clientId && initialCfg.spreadsheetId){
+if(initialCfg && initialCfg.clientId){
   bootFromConfig();
 }else{
   state.screen = "config";
