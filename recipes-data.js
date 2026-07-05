@@ -10,6 +10,16 @@
 // Ingredients: {name, amount, unit}. Amounts are per the recipe's stated `portions`.
 // variantGroups: single-select choice groups (a "Brak"/none option means optional).
 const RECIPES = [
+  { id:"kanapki", name:"Kanapki", meals:["sniadanie","kolacja"], portions:1,
+    fixed:[],
+    variantGroups:[
+      { id:"pieczywo", label:"Pieczywo", options:[
+        { id:"2kromki", label:"2 kromki chleba", ingredients:[{name:"Chleb",amount:2,unit:"kromka"}] },
+        { id:"3kromki", label:"3 kromki chleba", ingredients:[{name:"Chleb",amount:3,unit:"kromka"}] },
+        { id:"bulka", label:"Bułka", ingredients:[{name:"Bułka",amount:1,unit:"sztuka"}] },
+      ]},
+    ],
+  },
   { id:"bowl_tofu", name:"Bowl z tofu lub tempehem", meals:["obiad","lunch"], portions:1,
     fixed:[
       {name:"Fasola czerwona (z puszki)",amount:100,unit:"g"},
