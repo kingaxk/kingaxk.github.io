@@ -1,1 +1,3 @@
 # DailyPlanTracker
+
+PRIVATE USE ONLY
