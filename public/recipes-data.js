@@ -4,6 +4,17 @@
 // nie dotykając index.html. Musi być wgrany do tego samego repozytorium
 // GitHub, w tym samym folderze co index.html, pod nazwą recipes-data.js
 // (index.html wczytuje go automatycznie przy starcie).
+//
+// KONWENCJA JEDNOSTEK (ważne przy dodawaniu nowych przepisów!) — lista
+// zakupów sumuje składniki po dokładnym dopasowaniu nazwa+jednostka, więc
+// ten sam składnik musi zawsze mieć tę samą nazwę i jednostkę wszędzie:
+//   - płyny (oleje, sosy, mleko, woda, soki) -> zawsze "ml"
+//   - stałe odmierzane na wagę (mąka, cukier, ser, mięso) -> zawsze "g"
+//   - policzalne (jajka, ząbki czosnku, kromki, sztuki owoców) -> "sztuka" / "ząbek" / "kromka"
+//   - łyżka = 15ml, łyżeczka = 5ml, szklanka = 250ml (dla płynów - dla
+//     składników stałych mierzonych łyżką/łyżeczką przelicz na gramy wg
+//     gęstości, np. 1 łyżka oleju ≈ 12g, 1 łyżka miodu ≈ 21g)
+//   - jedna nazwa = jeden zapis (np. zawsze "Jajka", nigdy "Jajko M"/"Jajka L")
 // ============================================================================
 
 /* ============================== RECIPE DATABASE ============================== */
@@ -62,7 +73,7 @@ const RECIPES = [
   { id:"buleczki_tofu", name:"Bułeczki z tofu z nadzieniem", meals:["kolacja","lunch"], portions:2,
     fixed:[
       {name:"Tofu naturalne",amount:200,unit:"g"},
-      {name:"Jajko M",amount:1,unit:"sztuka"},
+      {name:"Jajka",amount:1,unit:"sztuka"},
       {name:"Mąka pszenna",amount:100,unit:"g"},
       {name:"Proszek do pieczenia",amount:1,unit:"łyżeczka"},
       {name:"Sól",amount:1,unit:"szczypta"},
@@ -85,7 +96,7 @@ const RECIPES = [
       {name:"Tortilla / chleb / bułka",amount:60,unit:"g"},
       {name:"Masło lub olej",amount:5,unit:"g"},
       {name:"Parmezan tarty",amount:5,unit:"g"},
-      {name:"Pomidor",amount:1,unit:"sztuka"},
+      {name:"Pomidor",amount:120,unit:"g"},
       {name:"Rukola",amount:1,unit:"garść"},
     ],
     variantGroups:[
@@ -103,12 +114,12 @@ const RECIPES = [
     variantGroups:[
       { id:"baza", label:"Baza białkowa", options:[
         { id:"silken", label:"Silken tofu", ingredients:[{name:"Silken tofu",amount:300,unit:"g"}] },
-        { id:"twarog", label:"Twaróg + jogurt", ingredients:[{name:"Twaróg chudy",amount:150,unit:"g"},{name:"Jogurt naturalny",amount:100,unit:"g"}] },
+        { id:"twarog", label:"Twaróg + jogurt", ingredients:[{name:"Twaróg",amount:150,unit:"g"},{name:"Jogurt naturalny",amount:100,unit:"g"}] },
         { id:"serek", label:"Serek wiejski lekki", ingredients:[{name:"Serek wiejski lekki",amount:200,unit:"g"}] },
       ]},
       { id:"slodzik", label:"Słodzik", options:[
         { id:"miod", label:"Miód / syrop klonowy", ingredients:[{name:"Miód lub syrop klonowy",amount:25,unit:"g"}] },
-        { id:"banan", label:"Banan (mrożony)", ingredients:[{name:"Banan",amount:100,unit:"g"}] },
+        { id:"banan", label:"Banan (mrożony)", ingredients:[{name:"Banan",amount:1,unit:"sztuka"}] },
       ]},
       { id:"czekolada", label:"Tuning czekoladowy (opcjonalnie)", options:[
         { id:"brak", label:"Bez", ingredients:[] },
@@ -119,11 +130,11 @@ const RECIPES = [
   },
   { id:"omlet_placuszki", name:"Omlet lub placuszki", meals:["sniadanie","lunch"], portions:1,
     fixed:[
-      {name:"Jajka M",amount:2,unit:"sztuka"},
+      {name:"Jajka",amount:2,unit:"sztuka"},
       {name:"Twaróg chudy / skyr",amount:50,unit:"g"},
       {name:"Mąka pszenna lub owsiana",amount:30,unit:"g"},
       {name:"Olej lub masło",amount:2,unit:"g"},
-      {name:"Proszek do pieczenia",amount:1,unit:"szczypta"},
+      {name:"Proszek do pieczenia",amount:0.1,unit:"łyżeczka"},
       {name:"Owoce (maliny/borówki)",amount:50,unit:"g"},
     ],
     variantGroups:[
@@ -159,12 +170,12 @@ const RECIPES = [
       {name:"Sos tamari lub sojowy",amount:30,unit:"ml"},
       {name:"Masło orzechowe",amount:50,unit:"g"},
       {name:"Limonki",amount:2,unit:"sztuka"},
-      {name:"Olej sezamowy",amount:1,unit:"łyżka"},
-      {name:"Miód",amount:1,unit:"łyżeczka"},
+      {name:"Olej sezamowy",amount:15,unit:"g"},
+      {name:"Miód",amount:7,unit:"g"},
       {name:"Sos sriracha",amount:1,unit:"łyżeczka"},
-      {name:"Imbir świeży",amount:1,unit:"kawałek (2,5 cm)"},
+      {name:"Imbir świeży",amount:10,unit:"g"},
       {name:"Czosnek",amount:3,unit:"ząbek"},
-      {name:"Olej roślinny",amount:60,unit:"ml"},
+      {name:"Olej roślinny",amount:55,unit:"g"},
       {name:"Papryczki chili",amount:2,unit:"sztuka"},
       {name:"Nerkowce surowe",amount:70,unit:"g"},
       {name:"Bataty",amount:400,unit:"g"},
@@ -194,7 +205,7 @@ const RECIPES = [
       {name:"Czosnek",amount:1,unit:"ząbek"},
       {name:"Masło lub oliwa",amount:5,unit:"g"},
       {name:"Bulion warzywny",amount:375,unit:"ml"},
-      {name:"Parmezan",amount:7,unit:"g"},
+      {name:"Parmezan tarty",amount:7,unit:"g"},
       {name:"Mozzarella",amount:60,unit:"g"},
     ],
     variantGroups:[
@@ -211,9 +222,9 @@ const RECIPES = [
   },
   { id:"kluseczki_szpinak", name:"Szybkie kluseczki leniwe (ze szpinakiem)", meals:["obiad","lunch","kolacja"], portions:1,
     fixed:[
-      {name:"Twaróg półtłusty lub chudy",amount:150,unit:"g"},
+      {name:"Twaróg",amount:150,unit:"g"},
       {name:"Mąka pszenna lub orkiszowa",amount:45,unit:"g"},
-      {name:"Jajko M",amount:1,unit:"sztuka"},
+      {name:"Jajka",amount:1,unit:"sztuka"},
       {name:"Szpinak baby",amount:50,unit:"g"},
       {name:"Masło",amount:5,unit:"g"},
       {name:"Sól",amount:1,unit:"szczypta"},
@@ -224,7 +235,7 @@ const RECIPES = [
     fixed:[
       {name:"Tofu naturalne",amount:150,unit:"g"},
       {name:"Mąka pszenna",amount:10,unit:"g"},
-      {name:"Jajko M",amount:1,unit:"sztuka"},
+      {name:"Jajka",amount:1,unit:"sztuka"},
       {name:"Bułka tarta",amount:20,unit:"g"},
       {name:"Oliwa lub olej",amount:1,unit:"łyżeczka"},
       {name:"Ryż",amount:50,unit:"g"},
@@ -275,7 +286,7 @@ const ADDONS = [
       {name:"Ogórki gruntowe",amount:500,unit:"g"},
       {name:"Sól niejodowana",amount:1,unit:"łyżka"},
       {name:"Czosnek",amount:3,unit:"ząbek"},
-      {name:"Olej roślinny",amount:1,unit:"łyżka"},
+      {name:"Olej roślinny",amount:12,unit:"g"},
       {name:"Ocet spirytusowy lub jabłkowy",amount:2,unit:"łyżka"},
       {name:"Cukier",amount:12,unit:"g"},
       {name:"Chili w płatkach lub sriracha",amount:1,unit:"łyżeczka"},
@@ -303,7 +314,7 @@ const ADDONS = [
         { id:"czerwona", label:"Czerwona, z majonezem", ingredients:[
           {name:"Czerwona kapusta",amount:500,unit:"g"},
           {name:"Kukurydza z puszki",amount:110,unit:"g"},
-          {name:"Majonez lekki lub tradycyjny",amount:25,unit:"g"},
+          {name:"Majonez lekki",amount:25,unit:"g"},
           {name:"Jogurt naturalny",amount:25,unit:"g"},
           {name:"Sok z cytryny",amount:1,unit:"łyżka"},
         ]},
@@ -343,8 +354,8 @@ const ADDONS = [
   { id:"sos_orzechowy", name:"Sos orzechowy (a la Pad Thai)", portions:5,
     fixed:[
       {name:"Masło orzechowe",amount:25,unit:"g"},
-      {name:"Sos sojowy",amount:1,unit:"łyżka"},
-      {name:"Sok z limonki",amount:1,unit:"łyżka"},
+      {name:"Sos sojowy",amount:15,unit:"ml"},
+      {name:"Sok z limonki",amount:15,unit:"ml"},
       {name:"Sriracha",amount:0.5,unit:"łyżeczka"},
     ], variantGroups:[],
   },
@@ -352,7 +363,7 @@ const ADDONS = [
     fixed:[
       {name:"Pasta tahini",amount:25,unit:"g"},
       {name:"Sok z cytryny",amount:1,unit:"łyżka"},
-      {name:"Miód lub syrop klonowy",amount:0.5,unit:"łyżeczka"},
+      {name:"Miód lub syrop klonowy",amount:4,unit:"g"},
     ], variantGroups:[],
   },
   { id:"sos_musztardowo_miodowy", name:"Sos musztardowo-miodowy", portions:3,
@@ -367,7 +378,7 @@ const ADDONS = [
     fixed:[
       {name:"Oliwa z oliwek",amount:24,unit:"g"},
       {name:"Ocet winny lub sok z cytryny",amount:1,unit:"łyżka"},
-      {name:"Musztarda",amount:0.5,unit:"łyżeczka"},
+      {name:"Musztarda",amount:3,unit:"g"},
     ], variantGroups:[],
   },
   { id:"hummus", name:"Hummus domowy", portions:15,
@@ -381,9 +392,9 @@ const ADDONS = [
   },
   { id:"pasta_jajeczna", name:"Pasta jajeczna do kanapek", portions:2,
     fixed:[
-      {name:"Jajka L (ugotowane na twardo)",amount:3,unit:"sztuka"},
+      {name:"Jajka",amount:3,unit:"sztuka"},
       {name:"Majonez lekki",amount:15,unit:"g"},
-      {name:"Jogurt naturalny gęsty",amount:30,unit:"g"},
+      {name:"Jogurt naturalny",amount:30,unit:"g"},
       {name:"Musztarda",amount:10,unit:"g"},
       {name:"Szczypiorek",amount:15,unit:"g"},
     ], variantGroups:[],

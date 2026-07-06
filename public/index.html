@@ -163,23 +163,11 @@
 <body>
 <div id="app"></div>
 
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
 <script src="recipes-data.js"></script>
 <script>
-/* ============================================================================
-   Client ID: wklej tu swój, żeby appka ZAWSZE pomijała ekran startowy i od
-   razu pokazywała "Zaloguj się przez Google". Client ID nie jest tajny (jest
-   z natury publiczny w aplikacjach webowych) — bezpiecznie możesz go wpisać
-   na stałe. Zostaw puste ("") żeby appka poprosiła o niego przy pierwszym
-   uruchomieniu (starszy sposób, wciąż działa jako zapasowy).
-
-   ID arkusza: to pole jest tylko DOMYŚLNE — nawet jeśli je tu wpiszesz, i tak
-   będziesz mogła je zmienić w każdej chwili z poziomu Ustawień w appce (po
-   zalogowaniu), bez edycji tego pliku. Zostaw puste, jeśli wolisz podać je
-   wyłącznie przez Ustawienia.
-   ============================================================================ */
-const HARDCODED_CLIENT_ID = "525970165988-vmr90nclqd7ltnmdnhc64frk953qoeln.apps.googleusercontent.com";
-const HARDCODED_SPREADSHEET_ID = "";
-
 /* ============================== CONTENT CONFIG ============================== */
 const CATEGORIES = [
   { id:"morning", name:"Poranna rutyna", items:[
@@ -307,8 +295,6 @@ const CATEGORY_HEX = {
 const ALL_ITEMS = [];
 CATEGORIES.forEach(cat=>cat.items.forEach(it=>ALL_ITEMS.push({ ...it, catId:cat.id, catName:cat.name })));
 function findItemMeta(itemId){ return ALL_ITEMS.find(it=>it.id===itemId); }
-let ACTIVE_SHEET_TAB = "Sheet1"; // discovered dynamically at load time, see discoverSheetTab()
-const HEADERS = ["Date","ItemId","Category","ItemName","Done","Note","ExtraJSON","UpdatedAt"];
 
 /* ============================== DATE HELPERS ============================== */
 function pad(n){ return n<10 ? "0"+n : ""+n; }
@@ -321,134 +307,63 @@ function dateRangeList(startStr,endStr){ const arr=[]; let cur=startStr, guard=0
 function humanDate(dateStr){ return parseDateStr(dateStr).toLocaleDateString("pl-PL",{weekday:"long",day:"numeric",month:"long"}); }
 function humanDateShort(dateStr){ return parseDateStr(dateStr).toLocaleDateString("pl-PL",{day:"numeric",month:"short"}); }
 
-/* ============================== CONFIG ============================== */
-// Spreadsheet ID: a user-settable override (changeable from Settings, after signing in)
-// always wins over the hardcoded fallback, so she can switch sheets without editing code.
-function getSpreadsheetId(){
-  try{
-    const override = localStorage.getItem("rd-sheet-override");
-    if(override) return override;
-  }catch(e){}
-  return HARDCODED_SPREADSHEET_ID || null;
-}
-function setSpreadsheetOverride(id){
-  try{ localStorage.setItem("rd-sheet-override", id); }catch(e){}
+/* ============================================================================
+   FIREBASE CONFIG: wklej dane swojego projektu z
+   Firebase Console > Project Settings > General > Your apps > (ikona web </>)
+   ============================================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyAc2KGXuRsQwXnxFr4DjA9Hph3OEQZ7Z2E",
+  authDomain: "daily-plan-tracker-3ec06.firebaseapp.com",
+  projectId: "daily-plan-tracker-3ec06",
+  storageBucket: "daily-plan-tracker-3ec06.firebasestorage.app",
+  messagingSenderId: "863267659148",
+  appId: "1:863267659148:web:1a7d0d7724400f8c4dcaa9"
+};
+
+/* ============================== FIREBASE INIT / AUTH ============================== */
+let currentUser = null;
+let auth = null, db = null;
+
+function initFirebase(){
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
 }
 
-function loadConfig(){
-  if(HARDCODED_CLIENT_ID){
-    return { clientId: HARDCODED_CLIENT_ID, spreadsheetId: getSpreadsheetId() };
-  }
-  // Fallback for anyone who hasn't hardcoded a Client ID yet: old one-time config screen.
-  try{
-    const raw = localStorage.getItem("rd-config");
-    const saved = raw ? JSON.parse(raw) : null;
-    if(saved && saved.clientId) return { clientId: saved.clientId, spreadsheetId: getSpreadsheetId() || saved.spreadsheetId };
-  }catch(e){}
-  return null;
-}
-function saveConfig(cfg){
-  try{ localStorage.setItem("rd-config", JSON.stringify(cfg)); }catch(e){}
-  if(cfg.spreadsheetId) setSpreadsheetOverride(cfg.spreadsheetId);
-}
-
-/* ============================== GOOGLE AUTH ============================== */
-let tokenClient = null;
-let accessToken = null;
-let tokenExpiry = 0;
-
-function loadGisScript(callback){
-  const s = document.createElement("script");
-  s.src = "https://accounts.google.com/gsi/client";
-  s.async = true;
-  s.onload = callback;
-  s.onerror = function(){ state.screen="signin"; state.errorMsg="Nie udało się wczytać biblioteki logowania Google — sprawdź internet."; render(); };
-  document.head.appendChild(s);
-}
-function initTokenClient(clientId){
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: clientId,
-    scope: "https://www.googleapis.com/auth/spreadsheets",
-    callback: function(){},
+function doSignIn(){
+  state.screen = "loading";
+  state.errorMsg = "";
+  render();
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch(function(e){
+    state.screen = "signin";
+    state.errorMsg = "Logowanie nie powiodło się lub odmówiono dostępu.";
+    render();
   });
+  // onAuthStateChanged (registered at boot) picks up success and loads data from there.
 }
-function requestToken(promptMode){
-  return new Promise(function(resolve,reject){
-    tokenClient.callback = function(resp){
-      if(resp.error){ reject(resp); return; }
-      accessToken = resp.access_token;
-      tokenExpiry = Date.now() + (resp.expires_in*1000 - 60000);
-      resolve(accessToken);
-    };
-    tokenClient.requestAccessToken({ prompt: promptMode });
-  });
-}
-async function ensureTokenSilent(){
-  if(accessToken && Date.now() < tokenExpiry) return accessToken;
-  try{ return await requestToken(""); }catch(e){ return null; }
+function doSignOut(){
+  auth.signOut();
 }
 
-/* ============================== SHEETS API ============================== */
-function sheetsUrl(spreadsheetId, range){
-  return "https://sheets.googleapis.com/v4/spreadsheets/"+spreadsheetId+"/values/"+encodeURIComponent(range);
-}
-
+/* ============================== FIRESTORE DATA LAYER ============================== */
 let sheetRows = [];
 let rowIndexMap = {};
 const pendingSync = new Set();
 let syncStatus = "idle";
 
 function keyFor(date,itemId){ return date+"|"+itemId; }
+function entryDocId(date,itemId){ return date+"_"+itemId; }
 
-async function discoverSheetTab(spreadsheetId, token){
-  const res = await fetch("https://sheets.googleapis.com/v4/spreadsheets/"+spreadsheetId+"?fields=sheets.properties.title", {
-    headers:{ Authorization:"Bearer "+token },
-  });
-  if(!res.ok){
-    if(res.status===401){ accessToken=null; tokenExpiry=0; throw new Error("reauth_needed"); }
-    if(res.status===403) throw new Error("Brak dostępu do arkusza — sprawdź, czy jesteś zalogowana właściwym kontem Google.");
-    if(res.status===404 || res.status===400) throw new Error("Nie znaleziono arkusza — sprawdź ID arkusza w Ustawieniach.");
-    throw new Error("Błąd HTTP "+res.status);
-  }
-  const data = await res.json();
-  const titles = (data.sheets||[]).map(function(s){ return s.properties && s.properties.title; }).filter(Boolean);
-  if(titles.length===0) throw new Error("Arkusz jest pusty lub nie ma żadnych kart.");
-  ACTIVE_SHEET_TAB = titles[0];
-}
-
-async function loadSheetData(){
-  const cfg = loadConfig();
-  const token = await ensureTokenSilent();
-  if(!token) throw new Error("no_token");
-  await discoverSheetTab(cfg.spreadsheetId, token);
-  const res = await fetch(sheetsUrl(cfg.spreadsheetId, ACTIVE_SHEET_TAB+"!A:H"), { headers:{ Authorization:"Bearer "+token } });
-  if(!res.ok){
-    if(res.status===401){ accessToken=null; tokenExpiry=0; throw new Error("reauth_needed"); }
-    if(res.status===403) throw new Error("Brak dostępu do arkusza — sprawdź, czy jesteś zalogowana właściwym kontem Google.");
-    if(res.status===404 || res.status===400) throw new Error("Nie znaleziono arkusza — sprawdź ID arkusza w Ustawieniach.");
-    throw new Error("Błąd HTTP "+res.status);
-  }
-  const data = await res.json();
-  const values = data.values || [];
+async function fetchAllRows(){
+  const snap = await db.collection("users").doc(currentUser.uid).collection("entries").get();
   sheetRows = [];
   rowIndexMap = {};
-  if(values.length===0){
-    await fetch(sheetsUrl(cfg.spreadsheetId, ACTIVE_SHEET_TAB+"!A1:H1")+"?valueInputOption=RAW", {
-      method:"PUT", headers:{ Authorization:"Bearer "+token, "Content-Type":"application/json" },
-      body: JSON.stringify({ values:[HEADERS] }),
-    });
-    return;
-  }
-  const headers = values[0];
-  for(let i=1;i<values.length;i++){
-    const r = values[i];
-    if(!r || !r[0]) continue;
-    const obj = {};
-    headers.forEach(function(h,idx){ obj[h]=r[idx]; });
-    obj._rowNum = i+1;
-    sheetRows.push(obj);
-    rowIndexMap[keyFor(obj.Date, obj.ItemId)] = obj;
-  }
+  snap.forEach(function(doc){
+    const d = doc.data();
+    sheetRows.push(d);
+    rowIndexMap[keyFor(d.Date, d.ItemId)] = d;
+  });
 }
 
 function getDayItems(dateStr){
@@ -476,63 +391,22 @@ function listDates(){
   return Array.from(set);
 }
 
-const writeChains = {};
-
-function pushRow(date, itemId, category, itemName, done, note, extraObj){
-  const cfg = loadConfig();
+// Firestore .set() on a deterministic doc ID (date_itemId) is a plain overwrite —
+// unlike the old Sheets version, there's no row number to discover and no race
+// condition possible: whichever write reaches the server last simply wins.
+async function pushRow(date, itemId, category, itemName, done, note, extraObj){
   const k = keyFor(date, itemId);
-  const rowValues = [date, itemId, category||"", itemName||"", done?"TRUE":"FALSE", note||"", JSON.stringify(extraObj), new Date().toISOString()];
-
-  const existing = rowIndexMap[k];
-  const localRow = { Date:date, ItemId:itemId, Category:category||"", ItemName:itemName||"", Done: rowValues[4], Note: rowValues[5], ExtraJSON: rowValues[6], UpdatedAt: rowValues[7], _rowNum: existing ? existing._rowNum : null };
-  if(existing){ Object.assign(existing, localRow); } else { sheetRows.push(localRow); rowIndexMap[k]=localRow; }
+  const localRow = { Date:date, ItemId:itemId, Category:category||"", ItemName:itemName||"", Done: done?"TRUE":"FALSE", Note: note||"", ExtraJSON: JSON.stringify(extraObj), UpdatedAt: new Date().toISOString() };
+  const idx = sheetRows.findIndex(function(r){ return r.Date===date && r.ItemId===itemId; });
+  if(idx===-1) sheetRows.push(localRow); else sheetRows[idx] = localRow;
+  rowIndexMap[k] = localRow;
 
   pendingSync.add(k);
   syncStatus = "saving";
   render();
 
-  // Serialize writes per key: if an earlier write to this same item+date is still
-  // in flight, wait for it (and for the row number it learns) before writing again.
-  // This prevents two rapid edits from both thinking "no row yet" and creating duplicates.
-  const prevChain = writeChains[k] || Promise.resolve();
-  const thisChain = prevChain.then(function(){ return doWrite(cfg, k, rowValues); });
-  writeChains[k] = thisChain.catch(function(){});
-  return thisChain;
-}
-
-async function doWrite(cfg, k, rowValues){
-  const rowRef = rowIndexMap[k];
   try{
-    const token = await ensureTokenSilent();
-    if(!token){ syncStatus="reauth"; pendingSync.delete(k); render(); return; }
-
-    let res;
-    if(rowRef._rowNum){
-      res = await fetch(sheetsUrl(cfg.spreadsheetId, ACTIVE_SHEET_TAB+"!A"+rowRef._rowNum+":H"+rowRef._rowNum)+"?valueInputOption=RAW", {
-        method:"PUT", headers:{ Authorization:"Bearer "+token, "Content-Type":"application/json" },
-        body: JSON.stringify({ values:[rowValues] }),
-      });
-    } else {
-      res = await fetch(sheetsUrl(cfg.spreadsheetId, ACTIVE_SHEET_TAB+"!A:H")+":append?valueInputOption=RAW&insertDataOption=INSERT_ROWS", {
-        method:"POST", headers:{ Authorization:"Bearer "+token, "Content-Type":"application/json" },
-        body: JSON.stringify({ values:[rowValues] }),
-      });
-    }
-    if(res.status===401){
-      accessToken = null; tokenExpiry = 0;
-      syncStatus = "reauth";
-      pendingSync.delete(k);
-      render();
-      return;
-    }
-    if(!res.ok) throw new Error("http_"+res.status);
-    if(!rowRef._rowNum){
-      const data = await res.json();
-      if(data.updates && data.updates.updatedRange){
-        const m = data.updates.updatedRange.match(/![A-Z]+(\d+):/);
-        if(m) rowRef._rowNum = parseInt(m[1],10);
-      }
-    }
+    await db.collection("users").doc(currentUser.uid).collection("entries").doc(entryDocId(date,itemId)).set(localRow);
     pendingSync.delete(k);
     syncStatus = pendingSync.size ? "saving" : "saved";
   }catch(e){
@@ -594,7 +468,7 @@ function checkSVG(){ return '<svg width="14" height="14" viewBox="0 0 24 24" fil
 
 /* ============================== STATE ============================== */
 const state = {
-  screen: "boot", // boot | config | signin | need-sheet-id | loading | error | app
+  screen: "boot", // boot | signin | loading | error | app
   errorMsg: "",
   activeTab: "today",
   viewDate: todayStr(),
@@ -613,9 +487,7 @@ const state = {
 
 function render(){
   const app = document.getElementById("app");
-  if(state.screen==="config"){ app.innerHTML = renderConfig(); return; }
   if(state.screen==="signin"){ app.innerHTML = renderSignIn(); return; }
-  if(state.screen==="need-sheet-id"){ app.innerHTML = renderNeedSheetId(); return; }
   if(state.screen==="loading" || state.screen==="boot"){ app.innerHTML = '<div class="rd-loading" style="padding-top:80px;">Ładowanie…</div>'; return; }
   if(state.screen==="error"){ app.innerHTML = renderConnError(); return; }
 
@@ -628,7 +500,6 @@ function render(){
   app.innerHTML =
     '<div class="rd-root">' +
       renderHeader() +
-      (syncStatus==="reauth" ? '<div class="rd-reauthbar"><span>Sesja Google wygasła</span><button data-action="reauth-click">Zaloguj ponownie</button></div>' : '') +
       '<main class="rd-main">'+body+'</main>' +
       renderBottomNav() +
       (state.settingsOpen ? renderSettings() : "") +
@@ -636,38 +507,17 @@ function render(){
 }
 
 /* ============================== SETUP / AUTH SCREENS ============================== */
-function renderConfig(){
-  return '<div class="rd-setup"><h1>Połącz z arkuszem</h1>' +
-    '<p>Wklej Client ID z Google Cloud Console oraz ID arkusza Google Sheets (fragment adresu między /d/ a /edit).</p>' +
-    '<label>OAuth Client ID</label>' +
-    '<input id="cfg-client-id" placeholder="123…apps.googleusercontent.com">' +
-    '<label>ID arkusza</label>' +
-    '<input id="cfg-sheet-id" placeholder="1AbC…">' +
-    '<button data-action="save-config">Zapisz</button>' +
-    (state.errorMsg ? '<div class="rd-error">'+escapeHTML(state.errorMsg)+'</div>' : '') +
-    '</div>';
-}
 function renderSignIn(){
   return '<div class="rd-setup"><h1>Rytuały dnia</h1>' +
-    '<p>Zaloguj się swoim kontem Google, żeby połączyć się z Twoim arkuszem.</p>' +
+    '<p>Zaloguj się swoim kontem Google — sesja zostanie zapamiętana, nie trzeba będzie robić tego przy każdym otwarciu.</p>' +
     '<button class="rd-google-btn" data-action="do-signin">Zaloguj się przez Google</button>' +
-    (state.errorMsg ? '<div class="rd-error">'+escapeHTML(state.errorMsg)+'</div>' : '') +
-    '</div>';
-}
-function renderNeedSheetId(){
-  return '<div class="rd-setup"><h1>ID arkusza</h1>' +
-    '<p>Podaj ID arkusza Google Sheets, z którym appka ma się połączyć (fragment adresu między /d/ a /edit).</p>' +
-    '<label>ID arkusza</label>' +
-    '<input id="sheet-id-input" placeholder="1AbC…" value="'+escapeHTML(getSpreadsheetId()||"")+'">' +
-    '<button data-action="save-sheet-id">Zapisz i połącz</button>' +
     (state.errorMsg ? '<div class="rd-error">'+escapeHTML(state.errorMsg)+'</div>' : '') +
     '</div>';
 }
 function renderConnError(){
   return '<div class="rd-setup"><h1>Coś poszło nie tak</h1>' +
-    '<p>'+escapeHTML(state.errorMsg||"Sprawdź konfigurację i połączenie z internetem.")+'</p>' +
+    '<p>'+escapeHTML(state.errorMsg||"Sprawdź połączenie z internetem i spróbuj ponownie.")+'</p>' +
     '<button data-action="do-signin">Spróbuj ponownie</button>' +
-    '<button class="secondary" data-action="change-sheet-id">Zmień ID arkusza</button>' +
     '</div>';
 }
 
@@ -960,6 +810,18 @@ function renderDashboard(){
 /* ============================== SHOPPING LIST VIEW ============================== */
 const MEAL_SLOT_IDS = ["breakfast","lunch","dinner","supper"];
 
+// Defensive fallback: if an ingredient ever ends up using a spoon/cup unit
+// (instead of the canonical g/ml from recipes-data.js), convert it to ml here
+// so it still merges with other ml-based entries of the same ingredient,
+// rather than silently showing up as a separate, easy-to-miss line.
+const VOLUME_TO_ML = { "łyżka":15, "łyżeczka":5, "szklanka":250 };
+function normalizeIngredient(ing){
+  if(VOLUME_TO_ML[ing.unit]){
+    return { name: ing.name, unit: "ml", amount: ing.amount * VOLUME_TO_ML[ing.unit] };
+  }
+  return ing;
+}
+
 function computeShoppingList(startDate, endDate){
   const dates = dateRangeList(startDate, endDate);
   const allIngredients = [];
@@ -980,9 +842,11 @@ function computeShoppingList(startDate, endDate){
 
   const merged = {};
   allIngredients.forEach(function(ing){
-    const key = ing.name+"|"+ing.unit;
-    if(!merged[key]) merged[key] = { name:ing.name, unit:ing.unit, amount:0 };
-    merged[key].amount += ing.amount;
+    const norm = normalizeIngredient(ing);
+    const cleanName = norm.name.trim();
+    const key = cleanName.toLowerCase()+"|"+norm.unit;
+    if(!merged[key]) merged[key] = { name:cleanName, unit:norm.unit, amount:0 };
+    merged[key].amount += norm.amount;
   });
   const list = Object.keys(merged).map(function(k){ return merged[k]; }).sort(function(a,b){ return a.name.localeCompare(b.name,"pl"); });
 
@@ -1075,10 +939,9 @@ function renderSettings(){
     html += '</div><div class="rd-suppadd"><input id="new-list-item-input" placeholder="Dodaj pozycję…"><button data-action="add-list-item">+</button></div>';
   }
 
-  html += '<h3 class="rd-h3">Konto i arkusz</h3><div class="rd-settingsbtns">' +
-    '<button class="rd-settingsbtn" data-action="refresh-sheet">&#8635; Odśwież dane z arkusza</button>' +
-    '<button class="rd-settingsbtn" data-action="sign-out">Wyloguj</button>' +
-    '<button class="rd-settingsbtn" data-action="change-sheet-id">Zmień ID arkusza</button></div>';
+  html += '<h3 class="rd-h3">Konto</h3><div class="rd-settingsbtns">' +
+    '<button class="rd-settingsbtn" data-action="refresh-sheet">&#8635; Odśwież dane</button>' +
+    '<button class="rd-settingsbtn" data-action="sign-out">Wyloguj</button></div>';
 
   html += '<h3 class="rd-h3">Kopia zapasowa (lokalny plik)</h3><div class="rd-settingsbtns">' +
     '<button class="rd-settingsbtn" data-action="export-json">&#8595; JSON</button>' +
@@ -1096,37 +959,8 @@ function handleClick(e){
   const action = el.getAttribute("data-action");
   if(action==="noop") return;
 
-  if(action==="save-config"){
-    const clientId = document.getElementById("cfg-client-id").value.trim();
-    const sheetId = document.getElementById("cfg-sheet-id").value.trim();
-    if(!clientId || !sheetId){ state.errorMsg = "Podaj Client ID i ID arkusza."; render(); return; }
-    saveConfig({ clientId: clientId, spreadsheetId: sheetId });
-    state.errorMsg = "";
-    bootFromConfig();
-    return;
-  }
-  if(action==="change-sheet-id"){
-    state.settingsOpen=false; state.screen="need-sheet-id"; state.errorMsg=""; render(); return;
-  }
-  if(action==="save-sheet-id"){
-    const id = document.getElementById("sheet-id-input").value.trim();
-    if(!id){ state.errorMsg = "Podaj ID arkusza."; render(); return; }
-    setSpreadsheetOverride(id);
-    state.errorMsg = "";
-    if(accessToken && Date.now() < tokenExpiry){
-      state.screen = "loading";
-      render();
-      loadSheetData().then(function(){ state.screen="app"; render(); })
-        .catch(function(e){ state.screen="error"; state.errorMsg=(e&&e.message)||"Nie udało się wczytać arkusza."; render(); });
-    } else {
-      state.screen = "signin";
-      render();
-    }
-    return;
-  }
   if(action==="do-signin"){ doSignIn(); return; }
-  if(action==="reauth-click"){ doSignIn(); return; }
-  if(action==="sign-out"){ accessToken=null; tokenExpiry=0; state.settingsOpen=false; state.screen="signin"; render(); return; }
+  if(action==="sign-out"){ state.settingsOpen=false; doSignOut(); return; }
 
   if(action==="set-tab"){ state.activeTab = el.getAttribute("data-tab"); state.expandedItem=null; render(); return; }
   if(action==="open-settings"){ state.settingsOpen = true; state.settingsStatus=""; state.manageListId=null; render(); return; }
@@ -1208,8 +1042,8 @@ function handleClick(e){
   if(action==="refresh-sheet"){
     state.settingsStatus = "Odświeżanie…";
     render();
-    loadSheetData().then(function(){ state.settingsStatus = "Dane odświeżone."; render(); })
-      .catch(function(){ state.settingsStatus = "Nie udało się odświeżyć — sprawdź internet i zalogowanie."; render(); });
+    fetchAllRows().then(function(){ state.settingsStatus = "Dane odświeżone."; render(); })
+      .catch(function(){ state.settingsStatus = "Nie udało się odświeżyć — sprawdź internet."; render(); });
     return;
   }
 
@@ -1310,51 +1144,34 @@ document.body.addEventListener("input", handleInput);
 document.body.addEventListener("focusout", handleBlur, true);
 
 /* ============================== BOOTSTRAP ============================== */
-async function doSignIn(){
-  state.screen = "loading";
-  state.errorMsg = "";
-  render();
-  try{
-    await requestToken("consent");
-    if(!getSpreadsheetId()){
-      state.screen = "need-sheet-id";
-      render();
-      return;
-    }
-    await loadSheetData();
-    state.screen = "app";
-    render();
-  }catch(e){
-    state.screen = "signin";
-    state.errorMsg = (e && e.message) ? e.message : "Logowanie nie powiodło się lub odmówiono dostępu.";
-    render();
-  }
-}
-
-function bootFromConfig(){
-  const cfg = loadConfig();
-  state.screen = "loading";
-  render();
-  loadGisScript(function(){
-    initTokenClient(cfg.clientId);
-    state.screen = "signin";
-    render();
-  });
-}
-
 try{
   const manifest = { name:"Rytuały dnia", short_name:"Rytuały", start_url:".", display:"standalone", background_color:"#F3F5EF", theme_color:"#F3F5EF" };
   const blob = new Blob([JSON.stringify(manifest)], {type:"application/json"});
   document.getElementById("rd-manifest-link").setAttribute("href", URL.createObjectURL(blob));
 }catch(e){}
 
-const initialCfg = loadConfig();
-if(initialCfg && initialCfg.clientId){
-  bootFromConfig();
-}else{
-  state.screen = "config";
-  render();
-}
+initFirebase();
+// This fires once on load with the restored session (if any) and again on every
+// sign-in/sign-out. This is what makes the login persistent across app restarts.
+auth.onAuthStateChanged(function(user){
+  if(user){
+    currentUser = user;
+    state.screen = "loading";
+    render();
+    fetchAllRows().then(function(){
+      state.screen = "app";
+      render();
+    }).catch(function(e){
+      state.screen = "error";
+      state.errorMsg = (e && e.message) ? e.message : "Nie udało się wczytać danych.";
+      render();
+    });
+  } else {
+    currentUser = null;
+    state.screen = "signin";
+    render();
+  }
+});
 </script>
 </body>
 </html>
