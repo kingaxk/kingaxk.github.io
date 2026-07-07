@@ -55,8 +55,7 @@
   .rd-cat-chev{font-size:14px;color:var(--ink-soft);width:14px;text-align:center;}
   .rd-cat-body{background:var(--bg-card);border-radius:14px;margin-top:8px;box-shadow:0 1px 3px rgba(43,51,40,0.06);}
 
-  .rd-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);}
-  .rd-row:last-child{border-bottom:none;}
+  .rd-row{display:flex;align-items:center;gap:12px;padding:12px 14px;}
   .rd-check{width:26px;height:26px;border-radius:50%;flex-shrink:0;border:2px solid var(--line);background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
   .rd-check.done{background:var(--cat-color,var(--accent));border-color:var(--cat-color,var(--accent));}
   .rd-check svg{display:none;}
@@ -434,7 +433,7 @@ function isItemDone(item,data){
   if(!data) return false;
   switch(item.type){
     case "simple": case "note": return !!data.done;
-    case "nested": { const subs=getEffectiveList(item); if(!subs.length) return false; return subs.every(function(s){return data.subDone&&data.subDone[s];}); }
+    case "nested": return !!data.done;
     case "log": return !!(data.logEntries && data.logEntries.length>0);
     case "meal": return !!data.mealValue;
     case "recipe_meal": return !!(data && data.recipeId);
@@ -561,7 +560,7 @@ function renderToday(){
 
 function renderCategory(cat, dayData){
   const items = (dayData && dayData.items) || {};
-  const collapsed = !!state.collapsedCats[cat.id];
+  const collapsed = state.collapsedCats[cat.id] === undefined ? true : state.collapsedCats[cat.id];
   const doneCount = cat.items.filter(function(it){return isItemDone(it, items[it.id]);}).length;
   const colorVar = CATEGORY_HEX[cat.id];
 
@@ -575,28 +574,29 @@ function renderCategory(cat, dayData){
 
   if(!collapsed){
     html += '<div class="rd-cat-body">';
-    cat.items.forEach(function(item){ html += renderItemRow(item, items[item.id]||{}, colorVar); });
+    cat.items.forEach(function(item, idx){ html += renderItemRow(item, items[item.id]||{}, colorVar, idx===cat.items.length-1); });
     html += '</div>';
   }
   html += '</section>';
   return html;
 }
 
-function renderItemRow(item, data, color){
+function renderItemRow(item, data, color, isLast){
   const done = isItemDone(item, data);
   const expanded = state.expandedItem === item.id;
+  const dividerStyle = isLast ? "" : "border-bottom:1px solid var(--line);";
   const checkBtn = function(interactive, action){
     return '<button class="rd-check'+(done?' done':'')+'" style="--cat-color:'+color+'" '+
     (interactive ? 'data-action="'+action+'" data-item="'+item.id+'"' : 'disabled') + '>' + checkSVG() + '</button>';
   };
 
   if(item.type==="simple"){
-    return '<div class="rd-row">' + checkBtn(true,"toggle-done") +
+    return '<div class="rd-row" style="'+dividerStyle+'">' + checkBtn(true,"toggle-done") +
       '<span class="rd-row-name">'+escapeHTML(item.name)+'</span></div>';
   }
 
   if(item.type==="note"){
-    let html = '<div><div class="rd-row">' + checkBtn(true,"toggle-done") +
+    let html = '<div style="'+dividerStyle+'"><div class="rd-row" style="border-bottom:none">' + checkBtn(true,"toggle-done") +
       '<button class="rd-row-main" data-action="toggle-expand" data-item="'+item.id+'">' +
       '<span class="rd-row-name">'+escapeHTML(item.name)+'</span>' +
       '<span class="rd-row-right">' + (data.note ? '<span class="rd-note-dot"></span>' : '') +
@@ -611,7 +611,7 @@ function renderItemRow(item, data, color){
   if(item.type==="nested"){
     const subs = getEffectiveList(item);
     const doneSubs = subs.filter(function(s){return data.subDone && data.subDone[s];}).length;
-    let html = '<div><div class="rd-row">' + checkBtn(false,"") +
+    let html = '<div style="'+dividerStyle+'"><div class="rd-row" style="border-bottom:none">' + checkBtn(true,"toggle-done") +
       '<button class="rd-row-main" data-action="toggle-expand" data-item="'+item.id+'">' +
       '<span class="rd-row-name">'+escapeHTML(item.name)+'</span>' +
       '<span class="rd-row-right"><span class="rd-count-badge">'+doneSubs+'/'+subs.length+'</span>' +
@@ -633,7 +633,7 @@ function renderItemRow(item, data, color){
 
   if(item.type==="log"){
     const entries = data.logEntries || [];
-    let html = '<div><div class="rd-row">' + checkBtn(false,"") +
+    let html = '<div style="'+dividerStyle+'"><div class="rd-row" style="border-bottom:none">' + checkBtn(true,"toggle-done") +
       '<button class="rd-row-main" data-action="toggle-expand" data-item="'+item.id+'">' +
       '<span class="rd-row-name">'+escapeHTML(item.name)+'</span>' +
       '<span class="rd-row-right"><span class="rd-count-badge">'+entries.length+' '+(entries.length===1?'seria':'serie')+'</span>' +
@@ -657,7 +657,7 @@ function renderItemRow(item, data, color){
 
   if(item.type==="recipe_meal"){
     const recipe = data.recipeId ? findRecipe(data.recipeId) : null;
-    let html = '<div><div class="rd-row">' + checkBtn(false,"") +
+    let html = '<div style="'+dividerStyle+'"><div class="rd-row" style="border-bottom:none">' + checkBtn(false,"") +
       '<button class="rd-row-main" data-action="toggle-expand" data-item="'+item.id+'">' +
       '<span class="rd-row-name">'+escapeHTML(item.name)+'</span>' +
       '<span class="rd-row-right"><span class="rd-count-badge">'+(recipe?escapeHTML(recipe.name):'— wybierz —')+'</span>' +
@@ -962,7 +962,13 @@ function handleClick(e){
   if(action==="do-signin"){ doSignIn(); return; }
   if(action==="sign-out"){ state.settingsOpen=false; doSignOut(); return; }
 
-  if(action==="set-tab"){ state.activeTab = el.getAttribute("data-tab"); state.expandedItem=null; render(); return; }
+  if(action==="set-tab"){
+    const tab = el.getAttribute("data-tab");
+    state.activeTab = tab;
+    state.expandedItem = null;
+    if(tab==="today") state.collapsedCats = {};
+    render(); return;
+  }
   if(action==="open-settings"){ state.settingsOpen = true; state.settingsStatus=""; state.manageListId=null; render(); return; }
   if(action==="close-settings" || action==="close-settings-overlay"){ state.settingsOpen = false; state.manageListId=null; render(); return; }
   if(action==="nav-date"){ state.viewDate = addDays(state.viewDate, parseInt(el.getAttribute("data-dir"),10)); state.expandedItem=null; render(); return; }
@@ -973,7 +979,12 @@ function handleClick(e){
     return;
   }
   if(action==="jump-date"){ state.viewDate = el.getAttribute("data-date"); state.activeTab="today"; state.expandedItem=null; render(); return; }
-  if(action==="toggle-cat"){ const c=el.getAttribute("data-cat"); state.collapsedCats[c]=!state.collapsedCats[c]; render(); return; }
+  if(action==="toggle-cat"){
+    const c = el.getAttribute("data-cat");
+    const cur = state.collapsedCats[c] === undefined ? true : state.collapsedCats[c];
+    state.collapsedCats[c] = !cur;
+    render(); return;
+  }
   if(action==="toggle-expand"){ const id=el.getAttribute("data-item"); state.expandedItem = state.expandedItem===id ? null : id; render(); return; }
 
   if(action==="toggle-done"){
