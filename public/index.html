@@ -126,9 +126,18 @@
   .rd-bestworst{display:flex;flex-direction:column;gap:8px;margin-bottom:20px;font-size:13px;color:var(--ink-soft);}
   .rd-bestworst strong{color:var(--ink);}
 
-  .rd-bottomnav{position:sticky;bottom:0;background:var(--bg-card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);}
-  .rd-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 0 10px;background:none;border:none;cursor:pointer;color:var(--ink-soft);font-size:13px;}
+  .rd-bottomnav{position:sticky;bottom:0;background:var(--bg-card);border-top:1px solid var(--line);display:flex;}
+  .rd-tab{flex:1;display:flex;align-items:center;justify-content:center;padding:14px 0 calc(10px + env(safe-area-inset-bottom));background:none;border:none;cursor:pointer;color:var(--ink-soft);position:relative;}
+  .rd-tab.active::after{content:"";position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:16px;height:3px;border-radius:2px;background:var(--accent);}
   .rd-tab.active{color:var(--accent);font-weight:700;}
+  .rd-fulltext{padding:12px 0 4px;}
+  .rd-recipe-desc{font-size:13px;color:var(--ink-soft);font-style:italic;margin:0 0 12px;}
+  .rd-recipe-subh{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);margin:14px 0 6px;}
+  .rd-recipe-ing{margin:0;padding-left:18px;font-size:14px;color:var(--ink);}
+  .rd-recipe-ing li{margin-bottom:4px;}
+  .rd-recipe-steps{margin:0;padding-left:18px;font-size:14px;color:var(--ink);}
+  .rd-recipe-steps li{margin-bottom:8px;line-height:1.4;}
+  .rd-recipe-note{font-size:13px;color:var(--ink-soft);background:var(--bg);border-radius:8px;padding:10px;margin-top:10px;}
 
   .rd-overlay{position:fixed;inset:0;background:rgba(43,51,40,0.4);z-index:50;display:flex;align-items:flex-end;}
   .rd-sheet{background:var(--bg);width:100%;max-height:85vh;overflow-y:auto;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom));}
@@ -469,7 +478,7 @@ function checkSVG(){ return '<svg width="14" height="14" viewBox="0 0 24 24" fil
 const state = {
   screen: "boot", // boot | signin | loading | error | app
   errorMsg: "",
-  activeTab: "today",
+  activeTab: "habits",
   viewDate: todayStr(),
   expandedItem: null,
   collapsedCats: {},
@@ -480,6 +489,13 @@ const state = {
   dashCustomEnd: todayStr(),
   shopStart: todayStr(),
   shopEnd: addDays(todayStr(),6),
+  mealMode: "day", // "day" | "range"
+  mealRangeStart: todayStr(),
+  mealRangeEnd: addDays(todayStr(),6),
+  expandedMealDay: null,
+  expandedMealKey: null, // "slotId" in day mode, "date|slotId" in range mode
+  expandedRecipeText: null, // recipe id currently showing full text (meal plan or shopping list)
+  expandedAddonText: null,
   settingsStatus: "",
   manageListId: null,
 };
@@ -491,7 +507,8 @@ function render(){
   if(state.screen==="error"){ app.innerHTML = renderConnError(); return; }
 
   let body = "";
-  if(state.activeTab==="today") body = renderToday();
+  if(state.activeTab==="habits") body = renderHabits();
+  else if(state.activeTab==="meals") body = renderMealPlan();
   else if(state.activeTab==="notes") body = renderNotes();
   else if(state.activeTab==="dashboard") body = renderDashboard();
   else body = renderShopping();
@@ -527,15 +544,24 @@ function renderHeader(){
     (syncLabel ? '<span class="rd-sync '+syncStatus+'">'+syncLabel+'</span>' : '') +
     '<button class="rd-gear" data-action="open-settings" aria-label="Ustawienia">&#9881;</button></div>';
 }
+const NAV_ICONS = {
+  habits: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>',
+  meals: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>',
+  shopping: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 12H7L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>',
+  notes: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg>',
+  dashboard: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="16" y="3" width="4" height="17" rx="1"/></svg>',
+};
 function renderBottomNav(){
-  const tabs=[["today","Dziś"],["notes","Notatki"],["dashboard","Dashboard"],["shopping","Zakupy"]];
+  const tabs=[["habits","Nawyki"],["meals","Jadłospis"],["shopping","Zakupy"],["notes","Notatki"],["dashboard","Dashboard"]];
   return '<nav class="rd-bottomnav">' + tabs.map(function(t){
-    return '<button class="rd-tab'+(state.activeTab===t[0]?' active':'')+'" data-action="set-tab" data-tab="'+t[0]+'">'+t[1]+'</button>';
+    return '<button class="rd-tab'+(state.activeTab===t[0]?' active':'')+'" data-action="set-tab" data-tab="'+t[0]+'" aria-label="'+t[1]+'" title="'+t[1]+'">'+NAV_ICONS[t[0]]+'</button>';
   }).join('') + '</nav>';
 }
 
-/* ============================== TODAY VIEW ============================== */
-function renderToday(){
+/* ============================== HABITS VIEW ============================== */
+const HABIT_CATEGORIES = CATEGORIES.filter(function(c){ return c.id!=="meals"; });
+
+function renderHabits(){
   const dayData = getDayItems(state.viewDate);
   const totals = computeDayTotals(dayData);
   const isToday = state.viewDate === todayStr();
@@ -547,14 +573,15 @@ function renderToday(){
     '</div>' +
     '<button data-action="nav-date" data-dir="1">&#8250;</button></div>';
 
-  html += '<div class="rd-dayarc">' + CATEGORIES.map(function(cat){
+  html += '<div class="rd-dayarc">' + HABIT_CATEGORIES.map(function(cat){
     const pct = totals.perCategory[cat.id].pct;
     const h = Math.max(pct*100,6);
     return '<button class="rd-dayarc-seg" data-action="jump-cat" data-cat="'+cat.id+'" title="'+escapeHTML(cat.name)+'" style="background:'+CATEGORY_HEX[cat.id]+'22"><div class="rd-dayarc-fill" style="height:'+h+'%;background:'+CATEGORY_HEX[cat.id]+'"></div></button>';
   }).join('') + '</div>';
 
-  html += '<div class="rd-daysummary">'+totals.done+'/'+totals.total+' zrealizowanych dziś</div>';
-  CATEGORIES.forEach(function(cat){ html += renderCategory(cat, dayData); });
+  const habitTotals = HABIT_CATEGORIES.reduce(function(acc,cat){ acc.done+=totals.perCategory[cat.id].done; acc.total+=totals.perCategory[cat.id].total; return acc; }, {done:0,total:0});
+  html += '<div class="rd-daysummary">'+habitTotals.done+'/'+habitTotals.total+' zrealizowanych dziś</div>';
+  HABIT_CATEGORIES.forEach(function(cat){ html += renderCategory(cat, dayData); });
   return html;
 }
 
@@ -700,7 +727,143 @@ function renderItemRow(item, data, color, isLast){
   return "";
 }
 
-/* ============================== NOTES VIEW ============================== */
+/* ============================== MEAL PLAN VIEW ============================== */
+function fmtAmountSimple(n){
+  const r = Math.round(n*10)/10;
+  return (r % 1 === 0) ? String(r) : String(r).replace(".",",");
+}
+function renderFullRecipeText(recipe, variants){
+  if(!recipe) return "";
+  let html = '<div class="rd-fulltext">';
+  if(recipe.description) html += '<p class="rd-recipe-desc">'+escapeHTML(recipe.description)+'</p>';
+  const allIngredients = (recipe.fixed||[]).slice();
+  (recipe.variantGroups||[]).forEach(function(g){
+    const chosen = variants && variants[g.id];
+    const opt = chosen && g.options.find(function(o){ return o.id===chosen; });
+    if(opt) (opt.ingredients||[]).forEach(function(ing){ allIngredients.push(ing); });
+  });
+  if(allIngredients.length){
+    html += '<h4 class="rd-recipe-subh">Składniki</h4><ul class="rd-recipe-ing">';
+    allIngredients.forEach(function(ing){ html += '<li>'+escapeHTML(ing.name)+' — '+fmtAmountSimple(ing.amount)+' '+escapeHTML(ing.unit)+'</li>'; });
+    html += '</ul>';
+  }
+  if(recipe.instructions && recipe.instructions.length){
+    html += '<h4 class="rd-recipe-subh">Wykonanie</h4><ol class="rd-recipe-steps">';
+    recipe.instructions.forEach(function(step){ html += '<li>'+escapeHTML(step)+'</li>'; });
+    html += '</ol>';
+  }
+  if(recipe.note) html += '<p class="rd-recipe-note">'+escapeHTML(recipe.note)+'</p>';
+  html += '</div>';
+  return html;
+}
+
+function renderMealSlotAccordion(item, data, dateStr, expandKey){
+  const recipe = data.recipeId ? findRecipe(data.recipeId) : null;
+  const expanded = state.expandedMealKey === expandKey;
+  const colorVar = CATEGORY_HEX.meals;
+  let html = '<section class="rd-cat">' +
+    '<button class="rd-cat-head" data-action="toggle-meal-slot" data-key="'+expandKey+'">' +
+    '<span class="rd-cat-bar" style="background:'+colorVar+'"></span>' +
+    '<span class="rd-cat-name">'+escapeHTML(item.name)+'</span>' +
+    '<span class="rd-cat-count">'+(recipe?escapeHTML(recipe.name):'— wybierz —')+'</span>' +
+    '<span class="rd-cat-chev">'+(expanded?'&#9662;':'&#9656;')+'</span>' +
+    '</button>';
+  if(expanded){
+    html += '<div class="rd-cat-body" style="padding:14px;">';
+    html += '<select class="rd-select" style="width:100%;max-width:100%;margin-bottom:10px" data-action="recipe-select" data-item="'+item.id+'" data-date="'+dateStr+'"><option value="">— wybierz danie —</option>';
+    recipesForMeal(item.mealTag).forEach(function(r){
+      html += '<option value="'+r.id+'" '+(data.recipeId===r.id?'selected':'')+'>'+escapeHTML(r.name)+'</option>';
+    });
+    html += '</select>';
+    if(recipe && recipe.variantGroups.length){
+      recipe.variantGroups.forEach(function(g){
+        const chosen = (data.variants && data.variants[g.id]) || "";
+        html += '<div style="margin-bottom:8px"><label class="rd-hint" style="display:block;margin-bottom:4px">'+escapeHTML(g.label)+'</label>' +
+          '<select class="rd-select" style="width:100%;max-width:100%" data-action="recipe-variant-select" data-item="'+item.id+'" data-group="'+g.id+'" data-date="'+dateStr+'"><option value="">— wybierz —</option>';
+        g.options.forEach(function(o){ html += '<option value="'+o.id+'" '+(chosen===o.id?'selected':'')+'>'+escapeHTML(o.label)+'</option>'; });
+        html += '</select></div>';
+      });
+    }
+    html += '<label class="rd-h3" style="margin-top:10px">Dodatki</label><div class="rd-sublist">';
+    ADDONS.forEach(function(a){
+      const sel = data.addons && data.addons[a.id];
+      const checked = !!sel;
+      html += '<label class="rd-sublabel"><input type="checkbox" '+(checked?'checked':'')+' data-action="recipe-addon-toggle" data-item="'+item.id+'" data-addon="'+a.id+'" data-date="'+dateStr+'"><span>'+escapeHTML(a.name)+'</span></label>';
+      if(checked && a.variantGroups && a.variantGroups.length){
+        a.variantGroups.forEach(function(g){
+          const chosenA = (sel.variants && sel.variants[g.id]) || "";
+          html += '<select class="rd-select" style="width:calc(100% - 30px);max-width:none;margin:2px 0 6px auto;display:block" data-action="recipe-addon-variant" data-item="'+item.id+'" data-addon="'+a.id+'" data-group="'+g.id+'" data-date="'+dateStr+'"><option value="">— '+escapeHTML(g.label)+' —</option>';
+          g.options.forEach(function(o){ html += '<option value="'+o.id+'" '+(chosenA===o.id?'selected':'')+'>'+escapeHTML(o.label)+'</option>'; });
+          html += '</select>';
+        });
+      }
+      if(checked){
+        html += '<button class="rd-hint" style="background:none;border:none;text-decoration:underline;cursor:pointer;padding:0 0 8px 30px;display:block;font-size:12px" data-action="toggle-addon-text" data-addon="'+a.id+'">'+(state.expandedAddonText===a.id?'Ukryj przepis':'Zobacz przepis')+'</button>';
+        if(state.expandedAddonText===a.id) html += renderFullRecipeText(a, sel.variants);
+      }
+    });
+    html += '</div>';
+    if(recipe){
+      html += '<button class="rd-settingsbtn" style="margin-top:14px;width:100%;justify-content:center" data-action="toggle-recipe-text" data-recipe="'+recipe.id+'">'+(state.expandedRecipeText===recipe.id?'Ukryj przepis':'Zobacz pełny przepis')+'</button>';
+      if(state.expandedRecipeText===recipe.id) html += renderFullRecipeText(recipe, data.variants);
+    }
+    html += '</div>';
+  }
+  html += '</section>';
+  return html;
+}
+
+function renderMealPlan(){
+  const mealsCat = CATEGORIES.find(function(c){ return c.id==="meals"; });
+  let html = '<h2 class="rd-h2">Jadłospis</h2>';
+  html += '<div class="rd-rangechips">' +
+    '<button class="rd-rangechip'+(state.mealMode==="day"?" active":"")+'" data-action="set-meal-mode" data-mode="day">Dziś</button>' +
+    '<button class="rd-rangechip'+(state.mealMode==="range"?" active":"")+'" data-action="set-meal-mode" data-mode="range">Zakres dat</button>' +
+    '</div>';
+
+  if(state.mealMode==="day"){
+    const isToday = state.viewDate === todayStr();
+    html += '<div class="rd-daynav">' +
+      '<button data-action="nav-date" data-dir="-1">&#8249;</button>' +
+      '<div><div class="rd-daydate">'+humanDate(state.viewDate)+'</div>' +
+      (!isToday ? '<button class="rd-backtoday" data-action="nav-date-today">Wróć do dziś</button>' : '') +
+      '</div>' +
+      '<button data-action="nav-date" data-dir="1">&#8250;</button></div>';
+    const dayData = getDayItems(state.viewDate).items;
+    mealsCat.items.forEach(function(item){
+      html += renderMealSlotAccordion(item, dayData[item.id]||{}, state.viewDate, item.id);
+    });
+  } else {
+    html += '<div class="rd-daterange">' +
+      '<input type="date" value="'+state.mealRangeStart+'" max="'+state.mealRangeEnd+'" data-action="set-meal-range-start">' +
+      '<input type="date" value="'+state.mealRangeEnd+'" min="'+state.mealRangeStart+'" data-action="set-meal-range-end">' +
+      '</div>';
+    const dates = dateRangeList(state.mealRangeStart, state.mealRangeEnd);
+    dates.forEach(function(d){
+      const dayExpanded = state.expandedMealDay === d;
+      const dayItems = getDayItems(d).items;
+      const filledCount = mealsCat.items.filter(function(it){ return dayItems[it.id] && dayItems[it.id].recipeId; }).length;
+      html += '<section class="rd-cat">' +
+        '<button class="rd-cat-head" data-action="toggle-meal-day" data-date="'+d+'">' +
+        '<span class="rd-cat-bar" style="background:'+CATEGORY_HEX.meals+'"></span>' +
+        '<span class="rd-cat-name" style="text-transform:capitalize">'+humanDateShort(d)+'</span>' +
+        '<span class="rd-cat-count">'+filledCount+'/'+mealsCat.items.length+'</span>' +
+        '<span class="rd-cat-chev">'+(dayExpanded?'&#9662;':'&#9656;')+'</span>' +
+        '</button>';
+      if(dayExpanded){
+        html += '<div style="margin-top:8px;">';
+        mealsCat.items.forEach(function(item){
+          html += renderMealSlotAccordion(item, dayItems[item.id]||{}, d, d+"|"+item.id);
+        });
+        html += '</div>';
+      }
+      html += '</section>';
+    });
+  }
+  return html;
+}
+
+
 function collectAllNotes(){
   const results = [];
   sheetRows.forEach(function(r){
@@ -887,9 +1050,14 @@ function renderShopping(){
       if(!recipe) return;
       const count = result.recipeUsage[rid];
       const batches = fmtAmount(count/(recipe.portions||1));
-      html += '<div class="rd-row"'+(idx===recipeIds.length-1?' style="border-bottom:none"':'')+'>' +
+      const isLastR = idx===recipeIds.length-1;
+      const textOpen = state.expandedRecipeText===rid;
+      html += '<button class="rd-row" style="width:100%;text-align:left;cursor:pointer;background:none;border:none;'+(isLastR&&!textOpen?'border-bottom:none':'')+'" data-action="toggle-recipe-text" data-recipe="'+rid+'">' +
         '<span class="rd-row-name">'+escapeHTML(recipe.name)+'</span>' +
-        '<span class="rd-count-badge" style="margin-left:auto;text-align:right">'+count+' '+(count===1?'porcja':'porcje')+'<br>(≈ '+batches+'× cały przepis)</span></div>';
+        '<span class="rd-count-badge" style="margin-left:auto;text-align:right">'+count+' '+(count===1?'porcja':'porcje')+'<br>(≈ '+batches+'× cały przepis)</span></button>';
+      if(textOpen){
+        html += '<div style="padding:0 14px 14px;'+(isLastR?'border-bottom:none':'border-bottom:1px solid var(--line)')+'">'+renderFullRecipeText(recipe, null)+'</div>';
+      }
     });
     html += '</div>';
   }
@@ -901,9 +1069,14 @@ function renderShopping(){
       const addon = findAddon(aid);
       if(!addon) return;
       const count = result.addonUsage[aid];
-      html += '<div class="rd-row"'+(idx===addonIds.length-1?' style="border-bottom:none"':'')+'>' +
+      const isLastA = idx===addonIds.length-1;
+      const textOpen = state.expandedAddonText===aid;
+      html += '<button class="rd-row" style="width:100%;text-align:left;cursor:pointer;background:none;border:none;'+(isLastA&&!textOpen?'border-bottom:none':'')+'" data-action="toggle-addon-text" data-addon="'+aid+'">' +
         '<span class="rd-row-name">'+escapeHTML(addon.name)+'</span>' +
-        '<span class="rd-count-badge" style="margin-left:auto">×'+count+'</span></div>';
+        '<span class="rd-count-badge" style="margin-left:auto">×'+count+'</span></button>';
+      if(textOpen){
+        html += '<div style="padding:0 14px 14px;'+(isLastA?'border-bottom:none':'border-bottom:1px solid var(--line)')+'">'+renderFullRecipeText(addon, null)+'</div>';
+      }
     });
     html += '</div>';
   }
@@ -966,7 +1139,7 @@ function handleClick(e){
     const tab = el.getAttribute("data-tab");
     state.activeTab = tab;
     state.expandedItem = null;
-    if(tab==="today") state.collapsedCats = {};
+    if(tab==="habits") state.collapsedCats = {};
     render(); return;
   }
   if(action==="open-settings"){ state.settingsOpen = true; state.settingsStatus=""; state.manageListId=null; render(); return; }
@@ -978,7 +1151,34 @@ function handleClick(e){
     if(target) target.scrollIntoView({behavior:"smooth", block:"start"});
     return;
   }
-  if(action==="jump-date"){ state.viewDate = el.getAttribute("data-date"); state.activeTab="today"; state.expandedItem=null; render(); return; }
+  if(action==="jump-date"){ state.viewDate = el.getAttribute("data-date"); state.activeTab="habits"; state.expandedItem=null; render(); return; }
+  if(action==="set-meal-mode"){
+    state.mealMode = el.getAttribute("data-mode");
+    state.expandedMealKey = null;
+    state.expandedMealDay = null;
+    render(); return;
+  }
+  if(action==="toggle-meal-slot"){
+    const key = el.getAttribute("data-key");
+    state.expandedMealKey = state.expandedMealKey===key ? null : key;
+    render(); return;
+  }
+  if(action==="toggle-meal-day"){
+    const d = el.getAttribute("data-date");
+    state.expandedMealDay = state.expandedMealDay===d ? null : d;
+    state.expandedMealKey = null;
+    render(); return;
+  }
+  if(action==="toggle-recipe-text"){
+    const rid = el.getAttribute("data-recipe");
+    state.expandedRecipeText = state.expandedRecipeText===rid ? null : rid;
+    render(); return;
+  }
+  if(action==="toggle-addon-text"){
+    const aid = el.getAttribute("data-addon");
+    state.expandedAddonText = state.expandedAddonText===aid ? null : aid;
+    render(); return;
+  }
   if(action==="toggle-cat"){
     const c = el.getAttribute("data-cat");
     const cur = state.collapsedCats[c] === undefined ? true : state.collapsedCats[c];
@@ -1007,7 +1207,8 @@ function handleClick(e){
   if(action==="recipe-addon-toggle"){
     const id = el.getAttribute("data-item");
     const addonId = el.getAttribute("data-addon");
-    updateDayItem(state.viewDate, id, function(d){
+    const dateStr = el.getAttribute("data-date") || state.viewDate;
+    updateDayItem(dateStr, id, function(d){
       const addons = { ...(d.addons||{}) };
       if(el.checked){ addons[addonId] = { variants:{} }; } else { delete addons[addonId]; }
       return { ...d, addons: addons };
@@ -1103,20 +1304,23 @@ function handleChange(e){
   }
   if(action==="recipe-select"){
     const id = el.getAttribute("data-item");
-    updateDayItem(state.viewDate, id, function(d){ return { recipeId: el.value, variants:{}, addons: d.addons||{} }; });
+    const dateStr = el.getAttribute("data-date") || state.viewDate;
+    updateDayItem(dateStr, id, function(d){ return { recipeId: el.value, variants:{}, addons: d.addons||{} }; });
     render(); return;
   }
   if(action==="recipe-variant-select"){
     const id = el.getAttribute("data-item");
     const group = el.getAttribute("data-group");
-    updateDayItem(state.viewDate, id, function(d){ return { ...d, variants: { ...(d.variants||{}), [group]: el.value } }; });
+    const dateStr = el.getAttribute("data-date") || state.viewDate;
+    updateDayItem(dateStr, id, function(d){ return { ...d, variants: { ...(d.variants||{}), [group]: el.value } }; });
     render(); return;
   }
   if(action==="recipe-addon-variant"){
     const id = el.getAttribute("data-item");
     const addonId = el.getAttribute("data-addon");
     const group = el.getAttribute("data-group");
-    updateDayItem(state.viewDate, id, function(d){
+    const dateStr = el.getAttribute("data-date") || state.viewDate;
+    updateDayItem(dateStr, id, function(d){
       const addons = { ...(d.addons||{}) };
       const cur = addons[addonId] || { variants:{} };
       addons[addonId] = { variants: { ...(cur.variants||{}), [group]: el.value } };
@@ -1128,6 +1332,8 @@ function handleChange(e){
   if(action==="set-custom-end"){ state.dashCustomEnd = el.value; render(); return; }
   if(action==="set-shop-start"){ state.shopStart = el.value; render(); return; }
   if(action==="set-shop-end"){ state.shopEnd = el.value; render(); return; }
+  if(action==="set-meal-range-start"){ state.mealRangeStart = el.value; render(); return; }
+  if(action==="set-meal-range-end"){ state.mealRangeEnd = el.value; render(); return; }
 }
 
 let noteTimer = null;
