@@ -736,17 +736,22 @@ function renderFullRecipeText(recipe, variants){
   if(!recipe) return "";
   let html = '<div class="rd-fulltext">';
   if(recipe.description) html += '<p class="rd-recipe-desc">'+escapeHTML(recipe.description)+'</p>';
-  const allIngredients = (recipe.fixed||[]).slice();
-  (recipe.variantGroups||[]).forEach(function(g){
-    const chosen = variants && variants[g.id];
-    const opt = chosen && g.options.find(function(o){ return o.id===chosen; });
-    if(opt) (opt.ingredients||[]).forEach(function(ing){ allIngredients.push(ing); });
-  });
-  if(allIngredients.length){
+
+  if((recipe.fixed||[]).length){
     html += '<h4 class="rd-recipe-subh">Składniki</h4><ul class="rd-recipe-ing">';
-    allIngredients.forEach(function(ing){ html += '<li>'+escapeHTML(ing.name)+' — '+fmtAmountSimple(ing.amount)+' '+escapeHTML(ing.unit)+'</li>'; });
+    recipe.fixed.forEach(function(ing){ html += '<li>'+escapeHTML(ing.name)+' — '+fmtAmountSimple(ing.amount)+' '+escapeHTML(ing.unit)+'</li>'; });
     html += '</ul>';
   }
+  (recipe.variantGroups||[]).forEach(function(g){
+    const chosen = variants && variants[g.id];
+    html += '<h4 class="rd-recipe-subh">'+escapeHTML(g.label)+'</h4><ul class="rd-recipe-ing">';
+    g.options.forEach(function(o){
+      const isChosen = chosen===o.id;
+      const ingText = (o.ingredients||[]).map(function(ing){ return escapeHTML(ing.name)+' — '+fmtAmountSimple(ing.amount)+' '+escapeHTML(ing.unit); }).join(", ");
+      html += '<li'+(isChosen?' style="color:var(--accent);font-weight:700"':'')+'>'+(isChosen?'✓ ':'')+escapeHTML(o.label)+(ingText?' — '+ingText:'')+'</li>';
+    });
+    html += '</ul>';
+  });
   if(recipe.instructions && recipe.instructions.length){
     html += '<h4 class="rd-recipe-subh">Wykonanie</h4><ol class="rd-recipe-steps">';
     recipe.instructions.forEach(function(step){ html += '<li>'+escapeHTML(step)+'</li>'; });
@@ -774,7 +779,11 @@ function renderMealSlotInner(item, data, dateStr){
     });
   }
   html += '<label class="rd-h3" style="margin-top:10px">Dodatki</label><div class="rd-sublist">';
-  ADDONS.forEach(function(a){
+  const relevantAddons = recipe ? ADDONS.filter(function(a){ return (a.tags||[]).some(function(t){ return (recipe.addonTags||[]).indexOf(t)!==-1; }); }) : [];
+  if(relevantAddons.length===0){
+    html += '<span class="rd-hint">'+(recipe ? 'Brak dodatków pasujących do tego dania.' : 'Wybierz danie, żeby zobaczyć pasujące dodatki.')+'</span>';
+  }
+  relevantAddons.forEach(function(a){
     const sel = data.addons && data.addons[a.id];
     const checked = !!sel;
     html += '<label class="rd-sublabel"><input type="checkbox" '+(checked?'checked':'')+' data-action="recipe-addon-toggle" data-item="'+item.id+'" data-addon="'+a.id+'" data-date="'+dateStr+'"><span>'+escapeHTML(a.name)+'</span></label>';

@@ -85,6 +85,21 @@
   </div>
 
   <div class="card">
+    <h2>Tagi dodatków</h2>
+    <p class="hint" id="tags-hint">Do jakich kategorii dodatków pasuje to danie? (Dodatki spoza tych kategorii nie pokażą się jako opcja przy tym daniu.)</p>
+    <div class="chiprow" id="tags-chips">
+      <button type="button" class="chip" data-tag="do_obiadu" onclick="toggleTag(this)">Do obiadu</button>
+      <button type="button" class="chip" data-tag="do_kanapek" onclick="toggleTag(this)">Do kanapek</button>
+      <button type="button" class="chip" data-tag="pasty" onclick="toggleTag(this)">Pasty</button>
+      <button type="button" class="chip" data-tag="do_zup" onclick="toggleTag(this)">Do zup</button>
+      <button type="button" class="chip" data-tag="do_salatek" onclick="toggleTag(this)">Do sałatek</button>
+      <button type="button" class="chip" data-tag="do_warzyw" onclick="toggleTag(this)">Do warzyw</button>
+      <button type="button" class="chip" data-tag="do_owocow" onclick="toggleTag(this)">Do owoców</button>
+      <button type="button" class="chip" data-tag="sniadanie" onclick="toggleTag(this)">Śniadanie</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>Stałe składniki (te, które są zawsze, niezależnie od wariantu)</h2>
     <p class="hint">Jednostki: płyny → ml, stałe na wagę → g, policzalne → sztuka / ząbek / kromka / plaster / garść. Trzymanie się tego samego zapisu dla tego samego składnika w różnych przepisach sprawia, że lista zakupów poprawnie je sumuje.</p>
     <div id="fixed-list"></div>
@@ -138,8 +153,12 @@ function setKind(k){
   document.getElementById("btn-recipe").classList.toggle("active", k==="recipe");
   document.getElementById("btn-addon").classList.toggle("active", k==="addon");
   document.getElementById("meals-block").style.display = k==="recipe" ? "block" : "none";
+  document.getElementById("tags-hint").textContent = k==="recipe"
+    ? "Do jakich kategorii dodatków pasuje to danie? (Dodatki spoza tych kategorii nie pokażą się jako opcja przy tym daniu.)"
+    : "Do jakich kategorii pasuje ten dodatek? (Zaznacz wszystkie, do których się nadaje — np. sos może pasować i do sałatek, i do warzyw.)";
 }
 function toggleMeal(btn){ btn.classList.toggle("active"); }
+function toggleTag(btn){ btn.classList.toggle("active"); }
 
 function unitSelectHTML(current){
   let html = '<select class="ing-unit">';
@@ -241,6 +260,8 @@ function generate(){
   } else {
     out += "portions:"+portions+",\n";
   }
+  const selectedTags = Array.from(document.querySelectorAll("#tags-chips .chip.active")).map(function(b){return b.getAttribute("data-tag");});
+  out += kind==="recipe" ? "    addonTags:"+jsArr(selectedTags)+",\n" : "    tags:"+jsArr(selectedTags)+",\n";
   out += "    description:"+jsStr(desc)+",\n";
   out += "    instructions:"+jsArr(cleanSteps)+",\n";
   if(note) out += "    note:"+jsStr(note)+",\n";
