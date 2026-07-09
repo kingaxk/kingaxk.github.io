@@ -500,8 +500,44 @@ const state = {
   manageListId: null,
 };
 
+function getStableSelector(el){
+  if(el.id) return "#"+el.id.replace(/([^a-zA-Z0-9_-])/g, "\\$1");
+  const attrs = [];
+  for(let i=0;i<el.attributes.length;i++){
+    const attr = el.attributes[i];
+    if(attr.name.indexOf("data-")===0){ attrs.push('['+attr.name+'="'+attr.value.replace(/"/g,'\\"')+'"]'); }
+  }
+  if(attrs.length) return el.tagName.toLowerCase()+attrs.join("");
+  return null;
+}
+
 function render(){
   const app = document.getElementById("app");
+  let focusInfo = null;
+  const active = document.activeElement;
+  if(active && app.contains(active) && (active.tagName==="TEXTAREA" || active.tagName==="INPUT")){
+    const sel = getStableSelector(active);
+    if(sel){
+      focusInfo = { sel:sel, start: active.selectionStart, end: active.selectionEnd };
+    }
+  }
+
+  renderInner(app);
+
+  if(focusInfo){
+    try{
+      const newEl = app.querySelector(focusInfo.sel);
+      if(newEl){
+        newEl.focus();
+        if(typeof focusInfo.start==="number" && newEl.setSelectionRange){
+          try{ newEl.setSelectionRange(focusInfo.start, focusInfo.end); }catch(e){}
+        }
+      }
+    }catch(e){ /* selector edge case - not worth failing the render over */ }
+  }
+}
+
+function renderInner(app){
   if(state.screen==="signin"){ app.innerHTML = renderSignIn(); return; }
   if(state.screen==="loading" || state.screen==="boot"){ app.innerHTML = '<div class="rd-loading" style="padding-top:80px;">Ładowanie…</div>'; return; }
   if(state.screen==="error"){ app.innerHTML = renderConnError(); return; }
