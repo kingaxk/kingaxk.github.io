@@ -233,6 +233,12 @@ const CATEGORIES = [
     { id:"tea_candle", name:"Herbatka i świeczka", type:"note" },
     { id:"reading", name:"Czytanie książki", type:"note" },
   ]},
+  { id:"somatyka", name:"Somatyka", negative:true, items:[
+    { id:"bol_glowy", name:"Ból głowy", type:"note" },
+    { id:"problemy_zasypianie", name:"Problemy z zasypianiem", type:"note" },
+    { id:"stres_zlosc_smutek", name:"Silny stres, złość, smutek", type:"note" },
+    { id:"placzliwosc", name:"Płaczliwość", type:"note" },
+  ]},
 ];
 
 
@@ -299,6 +305,7 @@ function computeMealIngredients(mealData){
 const CATEGORY_HEX = {
   morning:"#D98B5A", physical:"#6E9B7A", meals:"#A9724A",
   growth:"#6C82A6", self_focus:"#9C86A8", social:"#C97288", evening:"#55647F",
+  somatyka:"#B25D4D",
 };
 const ALL_ITEMS = [];
 CATEGORIES.forEach(cat=>cat.items.forEach(it=>ALL_ITEMS.push({ ...it, catId:cat.id, catName:cat.name })));
@@ -454,8 +461,9 @@ function computeDayTotals(dayData){
   const items=(dayData && dayData.items)||{};
   CATEGORIES.forEach(function(cat){
     let cDone=0;
-    cat.items.forEach(function(item){ total++; if(isItemDone(item,items[item.id])){done++;cDone++;} });
+    cat.items.forEach(function(item){ if(isItemDone(item,items[item.id])){cDone++;} });
     perCategory[cat.id] = { done:cDone, total:cat.items.length, pct: cat.items.length? cDone/cat.items.length : 0 };
+    if(!cat.negative){ done += cDone; total += cat.items.length; }
   });
   return { done:done, total:total, pct: total? done/total : 0, perCategory:perCategory };
 }
@@ -609,13 +617,13 @@ function renderHabits(){
     '</div>' +
     '<button data-action="nav-date" data-dir="1">&#8250;</button></div>';
 
-  html += '<div class="rd-dayarc">' + HABIT_CATEGORIES.map(function(cat){
+  html += '<div class="rd-dayarc">' + HABIT_CATEGORIES.filter(function(cat){ return !cat.negative; }).map(function(cat){
     const pct = totals.perCategory[cat.id].pct;
     const h = Math.max(pct*100,6);
     return '<button class="rd-dayarc-seg" data-action="jump-cat" data-cat="'+cat.id+'" title="'+escapeHTML(cat.name)+'" style="background:'+CATEGORY_HEX[cat.id]+'22"><div class="rd-dayarc-fill" style="height:'+h+'%;background:'+CATEGORY_HEX[cat.id]+'"></div></button>';
   }).join('') + '</div>';
 
-  const habitTotals = HABIT_CATEGORIES.reduce(function(acc,cat){ acc.done+=totals.perCategory[cat.id].done; acc.total+=totals.perCategory[cat.id].total; return acc; }, {done:0,total:0});
+  const habitTotals = HABIT_CATEGORIES.filter(function(cat){ return !cat.negative; }).reduce(function(acc,cat){ acc.done+=totals.perCategory[cat.id].done; acc.total+=totals.perCategory[cat.id].total; return acc; }, {done:0,total:0});
   html += '<div class="rd-daysummary">'+habitTotals.done+'/'+habitTotals.total+' zrealizowanych dziś</div>';
   HABIT_CATEGORIES.forEach(function(cat){ html += renderCategory(cat, dayData); });
   return html;
@@ -985,7 +993,7 @@ function renderDashboard(){
   }
 
   const avgPct = days.length ? days.reduce(function(s,d){return s+d.totals.pct;},0)/days.length : 0;
-  const catAverages = CATEGORIES.map(function(cat){
+  const catAverages = CATEGORIES.filter(function(cat){ return !cat.negative; }).map(function(cat){
     const avg = days.length ? days.reduce(function(s,d){return s+d.totals.perCategory[cat.id].pct;},0)/days.length : 0;
     return { id:cat.id, name:cat.name, pct: Math.round(avg*100) };
   });
@@ -1018,6 +1026,32 @@ function renderDashboard(){
       '<span class="rd-bar-pct">'+c.pct+'%</span></div>';
   });
   html += '</div>';
+
+  const negativeCats = CATEGORIES.filter(function(cat){ return cat.negative; });
+  negativeCats.forEach(function(cat){
+    const counts = cat.items.map(function(item){
+      const n = days.reduce(function(s,d){
+        const dItems = getDayItems(d.date).items;
+        return s + (isItemDone(item, dItems[item.id]) ? 1 : 0);
+      }, 0);
+      return { name:item.name, n:n };
+    });
+    const totalN = counts.reduce(function(s,c){return s+c.n;},0);
+    html += '<h3 class="rd-h3" style="color:'+CATEGORY_HEX[cat.id]+'">'+escapeHTML(cat.name)+' w tym zakresie (osobno, nie wliczane do realizacji)</h3>';
+    html += '<div class="rd-barlist" style="border-left:3px solid '+CATEGORY_HEX[cat.id]+'">';
+    if(totalN===0){
+      html += '<span class="rd-hint">Brak odnotowanych wystąpień w tym zakresie.</span>';
+    } else {
+      const maxN = Math.max.apply(null, counts.map(function(c){return c.n;}));
+      counts.forEach(function(c){
+        const pct = maxN ? Math.round(c.n/maxN*100) : 0;
+        html += '<div class="rd-bar-row"><span class="rd-bar-name">'+escapeHTML(c.name)+'</span>' +
+          '<div class="rd-bar-track"><div class="rd-bar-fill" style="width:'+pct+'%;background:'+CATEGORY_HEX[cat.id]+'"></div></div>' +
+          '<span class="rd-bar-pct">'+c.n+'×</span></div>';
+      });
+    }
+    html += '</div>';
+  });
 
   html += '<h3 class="rd-h3">Dni w tym zakresie</h3><div class="rd-heatmap">';
   days.forEach(function(d){
